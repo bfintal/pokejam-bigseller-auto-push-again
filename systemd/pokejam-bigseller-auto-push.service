@@ -1,0 +1,24 @@
+[Unit]
+Description=PokeJam BigSeller auto push again
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pokejam
+Group=pokejam
+WorkingDirectory=/opt/pokejam-bigseller-auto-push
+ExecStart=/usr/bin/python3 /opt/pokejam-bigseller-auto-push/run.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/pokejam-bigseller
+
+[Install]
+WantedBy=multi-user.target
