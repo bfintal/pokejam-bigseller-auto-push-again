@@ -12,8 +12,14 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-LIST_URL = "https://www.bigseller.com/api/v2/inventory/sync/list/record/listing/pageList.json"
-PUSH_URL = "https://www.bigseller.com/api/v2/inventory/sync/list/manualErrSync.json"
+LIST_URL = os.environ.get(
+    "BIGSELLER_LIST_URL",
+    "https://www.bigseller.com/api/v2/inventory/sync/list/record/listing/pageList.json",
+)
+PUSH_URL = os.environ.get(
+    "BIGSELLER_PUSH_URL",
+    "https://www.bigseller.com/api/v2/inventory/sync/list/manualErrSync.json",
+)
 COOKIE_PATH = Path(os.environ.get("BIGSELLER_COOKIE_FILE", "/etc/pokejam-bigseller/cookie"))
 
 LIST_BODY = {
@@ -49,9 +55,9 @@ COMMON_HEADERS = {
     ),
 }
 
-INTERVAL_SECONDS = 60
-RECHECK_SECONDS = 15
-MAX_PUSHES_PER_CYCLE = 10
+INTERVAL_SECONDS = int(os.environ.get("BIGSELLER_INTERVAL_SECONDS", "60"))
+RECHECK_SECONDS = float(os.environ.get("BIGSELLER_RECHECK_SECONDS", "15"))
+MAX_PUSHES_PER_CYCLE = int(os.environ.get("BIGSELLER_MAX_PUSHES_PER_CYCLE", "10"))
 MAX_PAGES = 20
 ERROR_PREVIEW = 140
 
