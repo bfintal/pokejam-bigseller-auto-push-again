@@ -185,3 +185,66 @@ If you have logs from before the namespace was set up, they're in the default jo
 ```bash
 sudo journalctl -u pokejam-bigseller-auto-push
 ```
+
+## Development
+
+### Running tests locally
+
+The test suite includes unit tests, end-to-end tests with a mock BigSeller server, and configuration validation tests.
+
+**Run all tests:**
+
+```bash
+python3 -m unittest discover -v
+```
+
+**Run specific test suites:**
+
+```bash
+# Unit tests (fast, no network)
+python3 -m unittest test_run -v
+
+# E2E tests with mock server (tests full service flow)
+python3 -m unittest test_e2e -v
+
+# Config tests (shellcheck, systemd validation)
+python3 -m unittest test_config -v
+```
+
+**What the tests cover:**
+
+| Test File | Coverage |
+|-----------|----------|
+| `test_run.py` | Cookie parsing, CSRF token extraction, row classification, response handling |
+| `test_e2e.py` | Full service flow with mock server: auth, pagination, push logic, recheck loop, session handling |
+| `test_config.py` | Shell script linting, systemd unit validation, journald config format |
+
+**E2E test features:**
+
+- Mock BigSeller HTTP server that mimics real API behavior
+- Verifies CSRF token header is sent (regression test for the original bug)
+- Tests pagination when fetching failed syncs
+- Tests row classification (rate-limit errors pushed, others skipped)
+- Tests the 15-second recheck loop
+- Tests the 10-push-per-cycle cap
+- Tests session expiration detection
+- Tests cookie refresh/save back to file
+- Regression test for id 88520
+
+**Environment variables for testing:**
+
+The service reads these environment variables, useful for testing:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BIGSELLER_COOKIE_FILE` | `/etc/pokejam-bigseller/cookie` | Path to cookie file |
+| `BIGSELLER_LIST_URL` | BigSeller prod URL | Override list endpoint |
+| `BIGSELLER_PUSH_URL` | BigSeller prod URL | Override push endpoint |
+| `BIGSELLER_INTERVAL_SECONDS` | `60` | Seconds between checks |
+| `BIGSELLER_RECHECK_SECONDS` | `15` | Seconds between rechecks |
+| `BIGSELLER_MAX_PUSHES_PER_CYCLE` | `10` | Max pushes per cycle |
+
+### CI
+
+Tests run automatically on every push and pull request via GitHub Actions.
+See `.github/workflows/ci.yml` for the workflow definition.

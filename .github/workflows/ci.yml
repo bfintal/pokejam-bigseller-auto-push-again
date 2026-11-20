@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint - Shellcheck install.sh
+        run: shellcheck -s bash install.sh
+
+      - name: Lint - Bash syntax
+        run: bash -n install.sh
+
+      - name: Lint - Python syntax
+        run: |
+          python3 -m py_compile run.py
+          python3 -m py_compile test_run.py
+          python3 -m py_compile test_e2e.py
+          python3 -m py_compile test_config.py
+
+      - name: Verify systemd service file
+        run: |
+          systemd-analyze verify systemd/pokejam-bigseller-auto-push.service 2>&1 | tee verify-output.txt || true
+          if grep -qE "^systemd/.*: (Failed|Error)" verify-output.txt; then
+            echo "Hard errors found in service file"
+            exit 1
+          fi
+          echo "Service file syntax OK"
+
+      - name: Run all tests
+        run: python3 -m unittest discover -v
