@@ -323,19 +323,21 @@ def log_skips(skipped: list) -> None:
         log(f"skip {extra} more failed rows that are not rate limits")
 
 
-def run_cycle() -> None:
+def run_cycle() -> bool:
+    """Run one check cycle. Returns True if anything interesting happened (for logging)."""
     snapshot = read_cookie_text()
     jar = parse_cookie(snapshot)
     if not jar:
         log(f"cookie file is empty: {COOKIE_PATH}")
-        return
+        return True
 
     for attempt in range(1, MAX_PUSHES_PER_CYCLE + 1):
         rows = fetch_failed_rows(jar)
         matched, skipped = classify(rows)
         if attempt == 1:
-            log(f"failed in last 24h: {len(rows)}, to push: {len(matched)}")
-            log_skips(skipped)
+            if matched or skipped:
+                log(f"failed in last 24h: {len(rows)}, to push: {len(matched)}")
+                log_skips(skipped)
         elif not matched:
             log("recheck: clear")
         else:
@@ -343,7 +345,7 @@ def run_cycle() -> None:
 
         if not matched:
             persist_cookie(snapshot, jar)
-            return
+            return attempt > 1 or bool(skipped)
 
         for row, needle, text in matched:
             log(
@@ -358,22 +360,25 @@ def run_cycle() -> None:
         if attempt == MAX_PUSHES_PER_CYCLE:
             log(f"stopped after {MAX_PUSHES_PER_CYCLE} pushes this cycle")
             persist_cookie(snapshot, jar)
-            return
+            return True
 
         log(f"recheck in {RECHECK_SECONDS}s")
         time.sleep(RECHECK_SECONDS)
 
     persist_cookie(snapshot, jar)
+    return True
 
 
 def main() -> int:
     install_signals()
     log("service started")
     log(f"cookie file: {COOKIE_PATH}")
+    quiet_cycles = 0
     while True:
         started = time.monotonic()
+        had_activity = False
         try:
-            run_cycle()
+            had_activity = run_cycle()
         except Stop:
             log("service stopped")
             return 0
@@ -382,16 +387,26 @@ def main() -> int:
                 f"session expired ({exc}). Replace {COOKIE_PATH} and restart, "
                 "or wait for the next check."
             )
+            had_activity = True
         except (ApiError, urllib.error.URLError, TimeoutError, OSError) as exc:
             log(f"check failed: {exc}")
+            had_activity = True
 
         remaining = INTERVAL_SECONDS - (time.monotonic() - started)
         try:
             if remaining > 0:
-                log(f"next check in {int(remaining)}s")
+                if had_activity:
+                    quiet_cycles = 0
+                    log(f"next check in {int(remaining)}s")
+                else:
+                    quiet_cycles += 1
+                    if quiet_cycles == 1 or quiet_cycles % 60 == 0:
+                        log(f"quiet ({quiet_cycles} cycle{'s' if quiet_cycles > 1 else ''}, no failed syncs)")
                 time.sleep(remaining)
             else:
-                log("next check now")
+                if had_activity:
+                    quiet_cycles = 0
+                    log("next check now")
         except Stop:
             log("service stopped")
             return 0

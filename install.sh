@@ -12,6 +12,8 @@ COOKIE_DIR="/etc/pokejam-bigseller"
 COOKIE_FILE="${COOKIE_DIR}/cookie"
 SERVICE_NAME="pokejam-bigseller-auto-push"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+JOURNALD_NAMESPACE="pokejam"
+JOURNALD_CONF="/etc/systemd/journald@${JOURNALD_NAMESPACE}.conf"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -38,6 +40,15 @@ fi
 chown -R root:root "${INSTALL_DIR}"
 chmod -R a+rX "${INSTALL_DIR}"
 
+# Install the journald namespace config for log size limiting (50 MB, 7 days)
+# This keeps this service's logs separate from other services
+install -o root -g root -m 644 "${INSTALL_DIR}/systemd/journald@${JOURNALD_NAMESPACE}.conf" "${JOURNALD_CONF}"
+
+# Enable the journald namespace instance (idempotent)
+# The socket is what actually receives logs; the service starts on demand
+systemctl enable "systemd-journald@${JOURNALD_NAMESPACE}.socket" 2>/dev/null || true
+systemctl start "systemd-journald@${JOURNALD_NAMESPACE}.socket" 2>/dev/null || true
+
 install -o root -g root -m 644 "${INSTALL_DIR}/systemd/${SERVICE_NAME}.service" "${SERVICE_FILE}"
 systemctl daemon-reload
 
@@ -48,7 +59,10 @@ else
   echo "Installed. The service is not started."
 fi
 
+echo ""
 echo "Cookie file: ${COOKIE_FILE}"
 echo "Start: sudo systemctl enable --now ${SERVICE_NAME}"
 echo "Stop:  sudo systemctl disable --now ${SERVICE_NAME}"
-echo "Logs:  sudo journalctl -u ${SERVICE_NAME} -f"
+echo "Logs:  sudo journalctl --namespace=${JOURNALD_NAMESPACE} -u ${SERVICE_NAME} -f"
+echo ""
+echo "Log limits: 50 MB max, 7 days retention (isolated from other services)"

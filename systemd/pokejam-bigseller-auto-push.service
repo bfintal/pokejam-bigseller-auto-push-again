@@ -1,7 +1,8 @@
 [Unit]
 Description=PokeJam BigSeller auto push again
-After=network-online.target
+After=network-online.target systemd-journald@pokejam.service
 Wants=network-online.target
+Requires=systemd-journald@pokejam.socket
 
 [Service]
 Type=simple
@@ -19,6 +20,14 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/etc/pokejam-bigseller
+
+# Log to isolated namespace with its own size limits (see journald@pokejam.conf)
+LogNamespace=pokejam
+
+# Rate limit: allow 100 messages per 30s burst, then throttle
+# This is a safety net; normal operation is well under this limit
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=100
 
 [Install]
 WantedBy=multi-user.target

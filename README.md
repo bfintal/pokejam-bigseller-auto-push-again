@@ -119,11 +119,40 @@ This stops it and leaves it stopped across reboots.
 
 ## Logs
 
+This service uses an isolated journald namespace so its logs don't affect other services on the droplet.
+
+**View logs:**
+
 ```bash
-sudo journalctl -u pokejam-bigseller-auto-push -f
+sudo journalctl --namespace=pokejam -u pokejam-bigseller-auto-push -f
 ```
 
-A quiet minute looks like this:
+**Log size limits (automatic, no manual cleanup needed):**
+
+| Limit | Value |
+|-------|-------|
+| Maximum size | 50 MB |
+| Maximum age | 7 days |
+
+Old entries are automatically deleted when either limit is reached.
+These limits apply only to this service; other services on the droplet are unaffected.
+
+**Check current log size:**
+
+```bash
+sudo journalctl --namespace=pokejam --disk-usage
+```
+
+### Log output examples
+
+When nothing needs pushing (quiet cycle), the service stays silent.
+Every hour it logs a status line:
+
+```text
+2026-11-20 16:05:01 +0800  quiet (60 cycles, no failed syncs)
+```
+
+When there are failed syncs that aren't rate limits:
 
 ```text
 2026-11-20 16:05:01 +0800  failed in last 24h: 4, to push: 0
@@ -148,3 +177,11 @@ Replace `/etc/pokejam-bigseller/cookie` and restart.
 The service stops after 10 pushes in one cycle, then waits until a minute has passed since that cycle started.
 That cap is there so a SKU that never clears cannot be pushed in a tight loop.
 The next minute tries again.
+
+### Legacy log access
+
+If you have logs from before the namespace was set up, they're in the default journal:
+
+```bash
+sudo journalctl -u pokejam-bigseller-auto-push
+```
