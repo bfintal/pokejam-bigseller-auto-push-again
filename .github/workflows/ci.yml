@@ -3,93 +3,50 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  lint:
-    name: Lint
+  test:
+    name: Lint & Test
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
-      
-      - name: Shellcheck install.sh
+
+      - name: Lint - Shellcheck install.sh
         run: shellcheck -s bash install.sh
-      
-      - name: Check bash syntax
+
+      - name: Lint - Bash syntax
         run: bash -n install.sh
-      
-      - name: Check Python syntax
+
+      - name: Lint - Python syntax
         run: |
           python3 -m py_compile run.py
           python3 -m py_compile test_run.py
           python3 -m py_compile test_e2e.py
           python3 -m py_compile test_config.py
 
-  unit-tests:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      
-      - name: Run unit tests
-        run: python3 -m unittest test_run -v
-
-  e2e-tests:
-    name: E2E Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      
-      - name: Run E2E tests
-        run: python3 -m unittest test_e2e -v
-
-  config-tests:
-    name: Config Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      
-      - name: Run config tests
-        run: python3 -m unittest test_config -v
-
-  systemd-verify:
-    name: Systemd Config Verify
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
       - name: Verify systemd service file
         run: |
-          # systemd-analyze verify checks for syntax errors
-          # Note: some warnings about missing dependencies are expected
-          # since we're not running on a real systemd system
           systemd-analyze verify systemd/pokejam-bigseller-auto-push.service 2>&1 | tee verify-output.txt || true
-          
-          # Fail only on actual errors, not warnings about missing paths
           if grep -qE "^systemd/.*: (Failed|Error)" verify-output.txt; then
             echo "Hard errors found in service file"
             exit 1
           fi
           echo "Service file syntax OK"
+
+      - name: Run all tests
+        run: python3 -m unittest discover -v
