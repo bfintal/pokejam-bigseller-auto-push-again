@@ -88,6 +88,22 @@ class CookieTests(unittest.TestCase):
         self.assertEqual(jar["JSESSIONID"], "new")
         self.assertEqual(jar["muc_token"], "keep")
 
+    def test_csrf_token_extracted_from_muc_token(self):
+        jar = {"JSESSIONID": "abc", "muc_token": "csrf123"}
+        self.assertEqual(run.get_csrf_token(jar), "csrf123")
+
+    def test_csrf_token_extracted_from_xsrf_token(self):
+        jar = {"JSESSIONID": "abc", "XSRF-TOKEN": "xsrf456"}
+        self.assertEqual(run.get_csrf_token(jar), "xsrf456")
+
+    def test_csrf_token_prefers_muc_token_over_xsrf(self):
+        jar = {"muc_token": "muc_first", "XSRF-TOKEN": "xsrf_second"}
+        self.assertEqual(run.get_csrf_token(jar), "muc_first")
+
+    def test_csrf_token_returns_none_when_missing(self):
+        jar = {"JSESSIONID": "abc", "locale": "en_US"}
+        self.assertIsNone(run.get_csrf_token(jar))
+
 
 class ResponseTests(unittest.TestCase):
     def test_html_and_401_are_logged_out(self):

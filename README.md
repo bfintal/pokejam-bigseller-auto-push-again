@@ -25,47 +25,75 @@ If the service is already running, that command restarts it.
 
 ## 2. Cookie
 
-The cookie file is one line.
+The cookie file is one line containing your full BigSeller session.
 The install creates it empty here:
 
 ```text
 /etc/pokejam-bigseller/cookie
 ```
 
-### Browser console
+### Getting the cookie (recommended method)
 
-Open BigSeller while you are logged in.
-Open the developer console on that tab and run:
+BigSeller uses CSRF protection.
+The cookie string must include both session cookies (like `JSESSIONID`) and the CSRF token cookie (`muc_token`).
+The browser console method does not work because login cookies are HttpOnly.
 
-```javascript
-copy(document.cookie)
-```
+**Step by step:**
 
-That copies the cookies JavaScript is allowed to see.
-BigSeller's login cookies are HttpOnly, so this value is usually not enough on its own.
+1. Log in to `https://www.bigseller.com` in your browser.
+2. Open DevTools (F12 or right-click > Inspect).
+3. Go to the **Network** tab.
+4. Navigate to Inventory > Sync > Failed (the page that shows failed syncs), or refresh if already there.
+5. In the Network list, click any request to `bigseller.com` (look for `pageList.json` or similar).
+6. In the right panel, find **Request Headers**.
+7. Find the `cookie:` line and copy its **entire value** (everything after `cookie: `).
+   It should look like: `JSESSIONID=abc123; muc_token=xyz789; locale=en_US; ...`
+8. Do **not** include the word `Cookie:` itself.
 
-### Cookie the API actually accepts
-
-Use this when the console value is rejected.
-
-1. Stay logged in at `https://www.bigseller.com`.
-2. Open DevTools, then the Network tab.
-3. Open the failed inventory-sync page, or refresh it.
-4. Click the request named `pageList.json`.
-5. Under Request Headers, copy the entire `cookie` value.
-   Do not include the word `Cookie:`.
-
-On the droplet, replace the file with that one line:
+**On the droplet:**
 
 ```bash
 sudo nano /etc/pokejam-bigseller/cookie
 ```
 
-Save it, then restart so the new login is used immediately:
+Paste the cookie string as a single line, save, then validate:
+
+```bash
+sudo -u pokejam python3 /opt/pokejam-bigseller-auto-push/run.py check
+```
+
+If validation passes, restart the service:
 
 ```bash
 sudo systemctl restart pokejam-bigseller-auto-push
 ```
+
+### Validating the cookie
+
+Before starting the service, always validate:
+
+```bash
+sudo -u pokejam python3 /opt/pokejam-bigseller-auto-push/run.py check
+```
+
+This command:
+- Shows which cookies were parsed from the file
+- Warns if required cookies (JSESSIONID, muc_token) are missing
+- Makes a test API call to BigSeller
+- Reports success with a count of failed syncs, or shows the exact error
+
+**Common errors:**
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `code 2001` | Missing CSRF token or session invalid | Copy full cookie string including `muc_token` |
+| `Session expired` | Login timed out | Get fresh cookie from browser |
+| `HTTP 401/403` | Not logged in | Log in to BigSeller, then copy cookie |
+
+### Cookie expiration
+
+BigSeller sessions expire.
+When you see `session expired` in logs, get a fresh cookie from your browser.
 
 The file is readable only by the `pokejam` service user.
 The service re-reads it at the start of every check.

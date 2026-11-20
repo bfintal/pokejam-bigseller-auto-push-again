@@ -4,6 +4,7 @@
 import json
 import os
 import signal
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -31,6 +32,10 @@ LIST_BODY = {
 }
 
 NEEDLES = ("too many requests", "exceeded", "limit", "frequency", "seconds")
+
+CSRF_TOKEN_COOKIES = ("muc_token", "XSRF-TOKEN", "csrf_token", "_csrf")
+CSRF_TOKEN_HEADER = "X-XSRF-TOKEN"
+
 COMMON_HEADERS = {
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "en-US,en;q=0.9",
@@ -103,6 +108,14 @@ def parse_cookie(raw: str) -> dict:
 
 def format_cookie(jar: dict) -> str:
     return "; ".join(f"{name}={value}" for name, value in jar.items())
+
+
+def get_csrf_token(jar: dict) -> str | None:
+    """Extract CSRF token from cookie jar. BigSeller uses muc_token for CSRF protection."""
+    for name in CSRF_TOKEN_COOKIES:
+        if name in jar:
+            return jar[name]
+    return None
 
 
 def apply_set_cookie(jar: dict, headers) -> bool:
@@ -202,6 +215,9 @@ def session_dead(status: int, body: bytes, payload) -> bool:
 def post(url: str, jar: dict, *, json_body=None, form=None, timeout: int = 30):
     headers = dict(COMMON_HEADERS)
     headers["Cookie"] = format_cookie(jar)
+    csrf_token = get_csrf_token(jar)
+    if csrf_token:
+        headers[CSRF_TOKEN_HEADER] = csrf_token
     if json_body is not None:
         data = json.dumps(json_body).encode()
         headers["Content-Type"] = "application/json"
@@ -236,8 +252,18 @@ def fetch_failed_rows(jar: dict) -> list:
             snippet = preview(body.decode("utf-8", errors="replace"))
             raise ApiError(f"list page {page} returned HTTP {status}: {snippet}")
         if payload.get("code") != 0:
+            code = payload.get("code")
+            msg = payload.get("msg") or ""
+            body_text = body.decode("utf-8", errors="replace")
+            hint = ""
+            if code == 2001:
+                hint = (
+                    " (code 2001 usually means authentication failed - "
+                    "check that cookie contains muc_token and session is valid)"
+                )
             raise ApiError(
-                f"list page {page} returned code {payload.get('code')}: {payload.get('msg')}"
+                f"list page {page} returned code {code}: {msg or '(empty message)'}{hint}\n"
+                f"Full response: {preview(body_text, 500)}"
             )
         data = payload.get("data") or {}
         batch = data.get("rows") or []
@@ -371,7 +397,68 @@ def main() -> int:
             return 0
 
 
+def check_cookie() -> int:
+    """Validate the cookie file and test the BigSeller session. Exit 0 if OK, 1 if not."""
+    print(f"Cookie file: {COOKIE_PATH}")
+    if not COOKIE_PATH.exists():
+        print(f"ERROR: Cookie file does not exist: {COOKIE_PATH}")
+        return 1
+
+    raw = read_cookie_text()
+    if not raw.strip():
+        print("ERROR: Cookie file is empty")
+        return 1
+
+    jar = parse_cookie(raw)
+    if not jar:
+        print("ERROR: Cookie file contains no valid cookies")
+        return 1
+
+    print(f"Parsed {len(jar)} cookie(s):")
+    for name in sorted(jar.keys()):
+        value = jar[name]
+        display = value[:20] + "..." if len(value) > 20 else value
+        print(f"  {name}={display}")
+
+    csrf_token = get_csrf_token(jar)
+    if csrf_token:
+        print(f"\nCSRF token found: {CSRF_TOKEN_HEADER} header will be set from cookie")
+    else:
+        print(f"\nWARNING: No CSRF token cookie found (looked for: {', '.join(CSRF_TOKEN_COOKIES)})")
+        print("The session may fail with code 2001. Make sure to copy the FULL cookie string from DevTools.")
+
+    required_cookies = ["JSESSIONID", "muc_token"]
+    missing = [name for name in required_cookies if name not in jar]
+    if missing:
+        print(f"\nWARNING: Expected cookies missing: {', '.join(missing)}")
+        print("Copy the full cookie string from browser DevTools (Network tab > Request Headers > cookie)")
+
+    print("\nTesting BigSeller API...")
+    try:
+        rows = fetch_failed_rows(jar)
+        print(f"SUCCESS: API returned {len(rows)} failed sync(s) in last 24h")
+        if rows:
+            print("Sample rows:")
+            for row in rows[:3]:
+                row_id = row.get("id")
+                sku = row.get("sku") or row.get("shopSku") or "?"
+                print(f"  id={row_id} sku={sku}")
+        return 0
+    except SessionExpired as exc:
+        print(f"ERROR: Session expired - {exc}")
+        print("Get a fresh cookie from your browser while logged in.")
+        return 1
+    except ApiError as exc:
+        print(f"ERROR: API call failed - {exc}")
+        return 1
+    except Exception as exc:
+        print(f"ERROR: Unexpected error - {type(exc).__name__}: {exc}")
+        return 1
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "check":
+        raise SystemExit(check_cookie())
     try:
         raise SystemExit(main())
     except Stop:
